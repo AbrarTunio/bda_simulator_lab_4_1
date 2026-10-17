@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MapReduce by hand: mapper, reducer, combiner, partitioner and counters</title>
+<meta name="description" content="A beginner explanation and a command-by-command simulator for the Writing MapReduce Programs lab.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Ubuntu+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+:root{
+  --paper:#F2F4F6; --surface:#FFFFFF; --ink:#16202B; --muted:#58646F; --rule:#D3D9DF;
+  --signal:#0B6E69; --signal-soft:#DCEFEC; --danger:#B42318; --danger-soft:#FBE4E1; --ok:#2E7D32; --ok-soft:#E5F2E6;
+  --hive:#B7791F; --hive-soft:#FDF3DC; --hdfs:#1D4ED8; --hdfs-soft:#E3EAFC; --yarn:#7C3AED; --yarn-soft:#EFE7FD; --spark:#9A3412;
+  --term-bg:#101820; --term-fg:#D6DEE6; --term-dim:#8193A3; --term-prompt:#7EE2A8; --term-path:#8CC4FF;
+  --bs-body-bg:var(--paper); --bs-body-color:var(--ink); --bs-border-color:var(--rule);
+  --bs-body-font-family:'Ubuntu',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --bs-font-monospace:'Ubuntu Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{font-size:1rem;line-height:1.6}
+h1,h2,h3{font-weight:700;letter-spacing:-.01em;line-height:1.12}
+h1{font-size:clamp(2rem,4.6vw,3.3rem);max-width:21ch}
+h2{font-size:clamp(1.45rem,2.6vw,2rem)}
+h3{font-size:1.1rem}
+p{max-width:70ch}
+code{color:var(--ink);background:#E4E9EE;padding:.05em .3em;border-radius:3px;font-size:.98em}
+.muted{color:var(--muted)} .tnum{font-variant-numeric:tabular-nums}
+.btn{font-weight:500;border-radius:6px}
+.btn-ink{background:var(--ink);color:#fff;border:1px solid var(--ink)} .btn-ink:hover,.btn-ink:focus{background:#2A3744;color:#fff}
+.btn-line{background:var(--surface);color:var(--ink);border:1px solid var(--rule)} .btn-line:hover{border-color:var(--ink);color:var(--ink)}
+.btn:focus-visible{outline:3px solid var(--signal);outline-offset:2px;box-shadow:none}
+.topnav{background:rgba(242,244,246,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--rule)}
+.brand{font-weight:700;color:var(--ink);text-decoration:none}
+.topnav .nav-link{color:var(--muted);font-weight:500;font-size:.95rem;padding:.35rem .6rem}
+.panel{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:1rem 1.1rem}
+.panel-title{font-weight:700;font-size:.95rem;margin-bottom:.5rem}
+.hero{padding:2.75rem 0 1rem}
+.lead-text{font-size:1.15rem;color:var(--muted);max-width:64ch}
+
+/* signature: the cabinet of date drawers */
+.cabinet{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:5px;max-width:760px;margin-top:1.5rem}
+.drawer{border:2px solid var(--hive);border-radius:5px;background:#fff;height:46px;position:relative;font-size:.68rem;font-weight:700;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px;color:var(--muted);transition:background .4s}
+.drawer::before{content:"";position:absolute;top:8px;left:30%;right:30%;height:4px;border-radius:2px;background:var(--hive)}
+.drawer.open{background:var(--hive);color:#fff}
+.drawer.open::before{background:#fff}
+.cab-cap{font-size:.9rem;color:var(--muted);margin-top:.6rem;max-width:760px}
+
+/* beginner ideas */
+.ideas{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem}
+.idea{background:#fff;border:1.5px solid var(--rule);border-radius:10px;padding:1rem 1.1rem}
+.idea .num{display:inline-flex;width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-weight:700;align-items:center;justify-content:center;font-size:.85rem;margin-right:.4rem}
+.idea h3{display:flex;align-items:center;margin-bottom:.45rem}
+.idea p{font-size:.95rem;margin-bottom:.5rem}
+.idea .eg{font-size:.88rem;color:var(--muted);border-left:3px solid var(--hive);padding-left:.6rem}
+.vis{margin:.5rem 0 .6rem;font-size:.78rem}
+.flowv{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem}
+.flowv span{border:1.5px solid var(--rule);border-radius:6px;padding:.2rem .45rem;background:#fff;font-weight:500}
+.flowv span.h{border-color:var(--hive);background:var(--hive-soft)} .flowv span.y{border-color:var(--yarn);background:var(--yarn-soft)} .flowv span.d{border-color:var(--hdfs);background:var(--hdfs-soft)}
+.flowv b{color:var(--muted)}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.twocol>div{border:1.5px solid var(--rule);border-radius:7px;padding:.4rem .5rem}
+.twocol .t{font-weight:700;font-size:.8rem}
+.gridv{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:.25rem}
+.gridv i{height:12px;background:#E9EDF1;border-radius:2px}
+.gridv i.on{background:var(--hive)}
+.bucketv{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+.bucketv i{height:20px;border-radius:3px;background:var(--hive-soft);border:1.5px solid var(--hive);font-style:normal;font-size:.6rem;display:flex;align-items:center;justify-content:center}
+.wtab{width:100%;font-size:.76rem;border-collapse:collapse}
+.wtab th,.wtab td{border-bottom:1px dashed var(--rule);padding:2px 4px;text-align:left}
+.wtab tr.hl td{background:var(--hive-soft);font-weight:700}
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.6rem 1.5rem;margin:0}
+.gloss>div{border-top:2px solid var(--ink);padding-top:.4rem}
+.gloss dt{font-weight:700} .gloss dd{margin:0;font-size:.92rem}
+
+/* simulator shell (shared pattern) */
+.rail{display:flex;gap:.4rem;overflow-x:auto;padding:.25rem 0 .6rem;scrollbar-width:thin}
+.rail button{flex:0 0 auto;border:1.5px solid var(--rule);background:#fff;border-radius:8px;padding:.35rem .6rem;font-weight:500;font-size:.85rem;color:var(--muted);text-align:left;line-height:1.2}
+.rail button b{display:block;font-size:1rem;color:var(--ink)}
+.rail button.cur{border-color:var(--ink);box-shadow:inset 0 -3px 0 var(--ink);color:var(--ink)}
+.rail button.done b::after{content:" ✓";color:var(--ok)}
+.step-head h2{margin-bottom:.25rem;font-size:clamp(1.25rem,2vw,1.6rem)}
+.cmd-list{max-height:min(52vh,560px);overflow:auto;padding-right:4px;scrollbar-width:thin}
+.cmd{border:1.5px solid var(--rule);border-radius:9px;background:#fff;margin-bottom:.6rem;overflow:hidden}
+.cmd.next{border-color:var(--ink)} .cmd.done{border-color:#B9DCC0}
+.cmd-top{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-bottom:1px solid var(--rule);background:#F7F9FA}
+.term-badge{font-size:.72rem;font-weight:700;border-radius:4px;padding:1px 6px;background:var(--ink);color:#fff;white-space:nowrap}
+.term-badge.hive{background:var(--hive)}
+.extra{font-size:.68rem;font-weight:700;color:var(--hive);border:1px solid var(--hive);border-radius:4px;padding:0 5px;white-space:nowrap}
+.cmd-label{font-size:.84rem;font-weight:500;color:var(--muted);flex:1;min-width:0}
+.cmd pre{margin:0;padding:.55rem .7rem;font-size:.9rem;line-height:1.45;background:#FBFCFD;max-height:240px;overflow:auto;white-space:pre}
+.cmd .run{min-width:92px} .cmd .status{font-size:.78rem;font-weight:700;white-space:nowrap}
+.cmd.done .status{color:var(--ok)}
+.cmd-explain{padding:.6rem .75rem;border-top:1px dashed var(--rule);font-size:.92rem;background:#fff}
+.cmd-explain p{margin:.15rem 0 .4rem}
+.cmd-explain .simple{background:var(--hive-soft);border-radius:6px;padding:.35rem .55rem}
+.cmd-explain .see{color:var(--signal);font-weight:500}
+.cmd-explain .vm{font-size:.8rem;color:var(--muted)}
+.cmd-explain .fix{border-left:3px solid var(--danger);padding:.3rem .6rem;background:var(--danger-soft);border-radius:0 6px 6px 0;font-size:.88rem}
+.step-takeaway{border:2px solid var(--ink);border-radius:10px;padding:.9rem 1.1rem;background:#fff;margin-top:.75rem}
+.step-takeaway ul{margin:.25rem 0 0;padding-left:1.1rem} .step-takeaway li{margin:.2rem 0}
+.ff-box{border:1.5px dashed var(--rule);border-radius:9px;padding:.75rem .9rem;margin-bottom:.75rem;background:#fff}
+.term-wrap{border-radius:10px;overflow:hidden;border:1px solid #22303C;background:var(--term-bg)}
+.term-tabs{display:flex;gap:2px;background:#1B2631;padding:4px 4px 0}
+.term-tabs button{border:0;background:var(--term-bg);color:#fff;font-size:.8rem;font-weight:500;padding:.35rem .7rem;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:.35rem}
+.term-tabs .dot{width:7px;height:7px;border-radius:50%;background:#5C6B78}
+.term-tabs .dot.hive{background:#F2C14E} .term-tabs .dot.busy{background:#FF9B8F}
+.term-body{height:300px;overflow:auto;padding:.6rem .75rem;margin:0;color:var(--term-fg);font-size:.86rem;line-height:1.4;white-space:pre;font-family:'Ubuntu Mono',ui-monospace,Menlo,Consolas,monospace}
+.term-body .pr{color:var(--term-prompt);font-weight:700} .term-body .pa{color:var(--term-path);font-weight:700}
+.term-body .dim{color:var(--term-dim)} .term-body .err{color:#FF9B8F} .term-body .ok{color:#8EE6A3} .term-body .warn{color:#F2C14E} .term-body .hi{color:#FFD479;font-weight:700}
+
+/* system view */
+.sys{position:sticky;top:64px;max-height:calc(100vh - 76px);overflow:auto;padding-right:2px}
+.statusbar{display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:center;background:var(--ink);color:#fff;border-radius:9px;padding:.45rem .7rem;margin-bottom:.6rem;font-size:.8rem}
+.statusbar .svc{border:1px solid #3A4A58;border-radius:5px;padding:1px 7px;color:#9FB0BE}
+.statusbar .svc.on{background:#fff;color:var(--ink);border-color:#fff;font-weight:700}
+.zone{border:1.5px solid var(--rule);background:#fff;border-radius:10px;padding:.65rem .75rem;margin-bottom:.6rem;transition:box-shadow .25s,border-color .25s}
+.zone.focus{border-color:var(--signal);box-shadow:0 0 0 3px var(--signal-soft)}
+.zone-h{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;margin-bottom:.4rem}
+.zone-h b{font-size:.98rem} .zone-h span{font-size:.76rem;color:var(--muted);text-align:right}
+#zMeta{border-left:5px solid var(--hive)} #zWh{border-left:5px solid var(--hdfs)} #zJob{border-left:5px solid var(--yarn)}
+.machine-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:.7rem}
+.mini-h{font-size:.8rem;font-weight:700;margin:.1rem 0 .25rem}
+.fs{font-size:.8rem;line-height:1.45;font-family:'Ubuntu Mono',ui-monospace,Menlo,Consolas,monospace;max-height:160px;overflow:auto;background:#F7F9FA;border:1px solid var(--rule);border-radius:6px;padding:.35rem .5rem}
+.fs .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs .d{font-weight:700} .fs .new{background:#FFF4C2;border-radius:3px}
+.fs .cwd{font-family:'Ubuntu',sans-serif;font-size:.64rem;font-weight:700;border-radius:3px;padding:0 4px;margin-left:4px;color:#fff;background:var(--ink)}
+.fs .warnb{font-family:'Ubuntu',sans-serif;font-size:.64rem;font-weight:700;border-radius:3px;padding:0 4px;margin-left:4px;color:var(--hive);border:1px solid var(--hive)}
+.procs{display:flex;flex-direction:column;gap:.25rem}
+.proc{border:1.5px solid var(--rule);border-left:4px solid #E76F00;border-radius:6px;padding:.18rem .45rem;font-size:.76rem;line-height:1.3}
+.proc b{font-size:.78rem} .proc small{display:block;color:var(--muted);font-size:.68rem}
+.proc.job{border-left-color:var(--yarn);background:var(--yarn-soft)}
+.none{color:var(--muted);font-size:.82rem;font-style:italic}
+.tcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.4rem}
+.tcard{border:1.5px solid var(--rule);border-radius:7px;padding:.35rem .5rem;font-size:.74rem;background:#fff}
+.tcard b{font-size:.84rem}
+.tcard .ty{display:inline-block;font-size:.62rem;font-weight:700;border-radius:3px;padding:0 5px;margin-left:4px;vertical-align:1px}
+.ty.ext{background:var(--hdfs-soft);color:var(--hdfs);border:1px solid var(--hdfs)} .ty.man{background:var(--hive-soft);color:#8A5A0F;border:1px solid var(--hive)}
+.tcard .loc{font-family:'Ubuntu Mono',monospace;color:var(--muted);font-size:.72rem;word-break:break-all}
+.tcard.gone{opacity:.35;text-decoration:line-through}
+.lockbar{font-size:.74rem;margin-bottom:.35rem;padding:.2rem .45rem;border-radius:5px;background:#F7F9FA;border:1px dashed var(--rule)}
+.lockbar.locked{border-color:var(--hive);background:var(--hive-soft)}
+.area{border:1.5px solid var(--rule);border-radius:7px;padding:.35rem .5rem;margin-bottom:.4rem}
+.area .ah{font-size:.76rem;font-weight:700;display:flex;justify-content:space-between;gap:.4rem}
+.area .ah small{font-weight:400;color:var(--muted)}
+.filebox{display:inline-block;border:1.5px solid var(--hdfs);background:var(--hdfs-soft);border-radius:4px;padding:1px 6px;font-size:.72rem;margin:.2rem .2rem 0 0;font-family:'Ubuntu Mono',monospace}
+.filebox.read{background:var(--hdfs);color:#fff}
+.tiles{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin-top:.25rem}
+.tile{border:1.5px solid var(--hive);border-radius:4px;padding:1px 2px;font-size:.6rem;text-align:center;line-height:1.2;background:#fff;font-variant-numeric:tabular-nums}
+.tile b{display:block;font-size:.66rem}
+.tile.read{background:var(--hdfs);border-color:var(--hdfs);color:#fff}
+.tile.skip{background:repeating-linear-gradient(-45deg,#F0F2F4 0 4px,#fff 4px 8px);color:#9AA5AF;border-color:#D3D9DF}
+.tile.odd{border-style:dashed}
+.bk{display:grid;grid-template-columns:repeat(8,1fr);gap:1px;margin-top:1px}
+.bk i{height:4px;background:#E8D3A6;border-radius:1px}
+.bk i.s{background:var(--hdfs)}
+.jobbox{border:1.5px solid var(--yarn);border-radius:7px;padding:.4rem .55rem;font-size:.78rem}
+.jobbox .q{font-family:'Ubuntu Mono',monospace;font-size:.78rem;color:var(--ink);white-space:pre-wrap;max-height:64px;overflow:hidden}
+.pb{display:grid;grid-template-columns:60px 1fr 40px;gap:.4rem;align-items:center;margin-top:.25rem;font-size:.72rem}
+.pb .bar{height:9px;background:#ECE7F7;border-radius:5px;overflow:hidden}
+.pb .bar i{display:block;height:100%;background:var(--yarn)}
+table.res{width:100%;font-size:.76rem;border-collapse:collapse;margin-top:.4rem}
+table.res th{border-bottom:2px solid var(--ink);padding:.15rem .3rem;text-align:left;font-weight:700}
+table.res td{border-bottom:1px dashed var(--rule);padding:.2rem .3rem;vertical-align:top;font-variant-numeric:tabular-nums}
+.tb{height:9px;border-radius:3px;margin-top:2px;background:var(--yarn)}
+.sizes{display:grid;grid-template-columns:90px 1fr 70px;gap:.3rem .5rem;align-items:center;font-size:.76rem;margin-top:.3rem}
+.sizes .b{height:14px;border-radius:3px}
+
+.concl{padding:3rem 0 2rem;border-top:1px solid var(--rule);margin-top:2.5rem}
+.checklist{list-style:none;padding:0;margin:0}
+.checklist li{padding:.45rem 0 .45rem 2rem;position:relative;border-bottom:1px dashed var(--rule)}
+.checklist li::before{content:"";position:absolute;left:0;top:.55rem;width:20px;height:20px;border:2px solid var(--rule);border-radius:5px;background:#fff}
+.checklist li.got::before{border-color:var(--ok);background:var(--ok)}
+.checklist li.got::after{content:"✓";position:absolute;left:5px;top:.42rem;color:#fff;font-weight:700;font-size:.85rem}
+.checklist small{display:block;color:var(--muted)}
+.lessons{counter-reset:l;list-style:none;padding:0;margin:0}
+.lessons li{counter-increment:l;padding:.5rem 0 .5rem 2.3rem;position:relative;border-bottom:1px dashed var(--rule)}
+.lessons li::before{content:counter(l);position:absolute;left:0;top:.45rem;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--ink);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:.85rem}
+footer{border-top:1px solid var(--rule);padding:1.5rem 0 2.5rem;color:var(--muted);font-size:.88rem}
+#flight{position:fixed;inset:0;pointer-events:none;z-index:2000}
+.dot{position:absolute;left:0;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:2px}
+@media (max-width: 991.98px){ .sys{position:static;max-height:none} .machine-grid,.twocol{grid-template-columns:1fr} .cabinet{grid-template-columns:repeat(7,minmax(0,1fr))} }
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} .drawer{transition:none} }
+
+/* MapReduce page */
+.mrline{display:flex;flex-wrap:wrap;align-items:stretch;gap:.35rem;margin-top:1.4rem;max-width:900px}
+.mrc{flex:1 1 130px;border:2px solid var(--yarn);border-radius:8px;background:#fff;padding:.5rem .6rem}
+.mrc.hot{border-color:var(--danger)}
+.mrc b{display:block} .mrc small{color:var(--muted);font-size:.78rem}
+.mra{align-self:center;color:var(--muted);font-weight:700}
+.mrs{display:flex;flex-wrap:wrap;gap:2px;margin-top:.35rem;min-height:14px}
+.mrs i{width:8px;height:8px;border-radius:2px;background:#E3DDF3}
+.mrs.on i{background:var(--yarn)} .mrc.hot .mrs.on i{background:var(--danger)}
+.skewv{display:flex;align-items:flex-end;gap:6px;height:60px;border-bottom:1px solid var(--rule)}
+.skewv i{flex:1;background:var(--yarn);border-radius:3px 3px 0 0} .skewv i:first-child{background:var(--danger)}
+.srcchips{display:flex;flex-wrap:wrap;gap:.3rem}
+.srcchip{border:1.5px solid var(--rule);border-radius:5px;padding:1px 7px;font-size:.74rem;font-family:'Ubuntu Mono',monospace;background:#fff}
+.srcchip small{font-family:'Ubuntu',sans-serif;color:var(--muted);margin-left:5px}
+.srcchip.on{border-color:var(--yarn);background:var(--yarn-soft)}
+.srcview{font-size:.76rem;line-height:1.35;background:#FBFCFD;border:1px solid var(--rule);border-radius:6px;padding:.35rem .4rem;max-height:240px;overflow:auto;margin:0}
+.srcview span{display:block;white-space:pre} .srcview i{display:inline-block;width:2.2em;color:#9AA5AF;font-style:normal;text-align:right;margin-right:.6em}
+.srcview .hlline{background:#FFF4C2} .srcview .badline{background:var(--danger-soft)}
+.pmeta{font-size:.8rem;font-weight:700;margin-bottom:.35rem}
+.pmeta .muted{font-weight:400}
+.pgrid{display:grid;grid-template-columns:1fr 1.25fr .7fr 1.2fr 1fr;gap:.35rem;align-items:start}
+.pcol{display:flex;flex-direction:column;gap:.25rem;border-radius:7px;padding:.2rem;transition:background .3s}
+.pcol.act{background:var(--yarn-soft)}
+.ph{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:none}
+.pbox{border:1.5px solid var(--rule);border-radius:6px;padding:.2rem .35rem;font-size:.72rem;font-weight:700;background:#fff;line-height:1.25}
+.pbox small{display:block;font-weight:400;color:var(--muted);font-size:.66rem;font-variant-numeric:tabular-nums}
+.pbox.in{border-color:var(--hdfs)} .pbox.map{border-color:var(--yarn)} .pbox.red{border-color:var(--yarn)} .pbox.out{border-color:var(--ok)}
+.pbox.slow{border-color:var(--danger);background:var(--danger-soft)}
+.cmb{color:var(--ok)}
+.shc{align-items:center;text-align:center}
+.shc small{font-size:.66rem;color:var(--muted)}
+.shbar{width:26px;height:110px;border:1.5px solid var(--danger);border-radius:5px;display:flex;align-items:flex-end;overflow:hidden;background:#fff}
+.shfill{width:100%;background:var(--danger)}
+.rtime{height:5px;background:#ECE7F7;border-radius:3px;margin-top:3px;overflow:hidden}
+.rtime i{display:block;height:100%;background:var(--yarn)}
+.pbox.slow .rtime i{background:var(--danger)}
+td.badtd{color:var(--danger);font-weight:700}
+.headline{margin-top:.5rem;border:1.5px solid var(--yarn);background:var(--yarn-soft);border-radius:7px;padding:.4rem .6rem;font-size:.82rem}
+.headline b.big{font-size:1.15rem}
+@media (max-width: 991.98px){ .pgrid{grid-template-columns:1fr 1fr} }
+</style>
+</head>
+<body>
+<div id="flight" aria-hidden="true"></div>
+<nav class="topnav sticky-top">
+  <div class="container-xxl d-flex flex-wrap justify-content-between align-items-center py-2 gap-2">
+    <a class="brand" href="#top">MapReduce, by hand</a>
+    <div class="nav">
+      <a class="nav-link" href="#ideas">Explained simply</a>
+      <a class="nav-link" href="#sim">Simulator</a>
+      <a class="nav-link" href="#conclusion">What the lab teaches</a>
+      <a class="nav-link" href="activity.html" style="color:var(--ink);font-weight:700">Graded activity</a>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+<header class="hero">
+  <div class="container-xxl">
+    <h1>Write the map, the reduce, and watch the shuffle in between.</h1>
+    <p class="lead-text mt-3">In this lab you write a Java MapReduce job that adds up the bytes each host sent, run it on YARN over the two million events, then make it cheaper with a combiner, steer it with a partitioner, and break it on purpose with skew. The page explains the ideas in plain words first; the simulator then runs every command.</p>
+    <div class="mrline" id="mrline" aria-hidden="true">
+      <div class="mrc"><b>Input</b><small>3 blocks of events.json</small><div class="mrs" id="hl0"></div></div>
+      <div class="mra">›</div>
+      <div class="mrc"><b>map()</b><small>line to (host, bytes)</small><div class="mrs" id="hl1"></div></div>
+      <div class="mra">›</div>
+      <div class="mrc hot"><b>shuffle</b><small>sort and send by key</small><div class="mrs" id="hl2"></div></div>
+      <div class="mra">›</div>
+      <div class="mrc"><b>reduce()</b><small>(host, [bytes…]) to sum</small><div class="mrs" id="hl3"></div></div>
+      <div class="mra">›</div>
+      <div class="mrc"><b>Output</b><small>part-r-00000</small><div class="mrs" id="hl4"></div></div>
+    </div>
+    <p class="cab-cap">The shuffle in the middle is where the network cost is. Most of this lab is about making it smaller or more even.</p>
+  </div>
+</header>
+
+<section id="ideas" class="py-4">
+  <div class="container-xxl">
+    <h2 class="mb-1">Explained simply</h2>
+    <p class="muted mb-3">Nine ideas, each used in a step of the lab.</p>
+    <div class="ideas">
+      <div class="idea"><h3><span class="num">1</span>MapReduce in one picture</h3>
+        <p>Think of counting votes in an election. Each polling station counts its own ballots (<strong>map</strong>). The tallies are sent to a central office sorted by candidate (<strong>shuffle</strong>). The office adds up each candidate's tallies (<strong>reduce</strong>).</p>
+        <p class="eg">Our job: each mapper reads lines and writes (host, bytes); the reducer adds up the bytes for each host.</p></div>
+      <div class="idea"><h3><span class="num">2</span>Map tasks and reduce tasks</h3>
+        <p>Hadoop starts roughly <strong>one map task per HDFS block</strong>: events.json has 3 blocks, so 3 mappers. You do not choose that number. You <strong>do</strong> choose the number of reducers, and each reducer writes one output file.</p>
+        <p class="eg">That is why job output is always a folder of part files, never a single file.</p></div>
+      <div class="idea"><h3><span class="num">3</span>Key and value types (Writables)</h3>
+        <div class="vis flowv"><span>Mapper&lt;</span><span class="h">LongWritable</span><span class="h">Text</span><b>›</b><span class="y">Text</span><span class="y">LongWritable</span><span>&gt;</span></div>
+        <p>The first two types are what the mapper reads (the line's position in the file, and the line). The last two are what it writes (host, bytes). Hadoop uses its own compact types, like <code>Text</code> and <code>LongWritable</code>, because millions of them travel over the network.</p></div>
+      <div class="idea"><h3><span class="num">4</span>The shuffle is the expensive part</h3>
+        <p>Between map and reduce, every (key, value) pair is sorted and sent to the reducer that owns that key. Here that is 2 million small records crossing the network. Everything you optimise in this lab is about this middle part.</p>
+        <p class="eg">The counter <code>Reduce shuffle bytes</code> measures it.</p></div>
+      <div class="idea"><h3><span class="num">5</span>The combiner: a mini-reduce before sending</h3>
+        <div class="vis twocol"><div><div class="t">Without</div>host042: 10, 20, 15, 30 … sent one by one</div><div><div class="t">With combiner</div>host042: 75 sent once per mapper</div></div>
+        <p class="eg">Safe for sum, count, min and max. <strong>Not</strong> safe for an average: the average of averages is wrong. Send (sum, count) instead.</p></div>
+      <div class="idea"><h3><span class="num">6</span>The partitioner chooses the reducer</h3>
+        <p>For each key it answers "which reducer gets this?". The default is a hash of the key, which spreads keys evenly but randomly. A custom partitioner can group related keys, for example host000 to host049 on reducer 0.</p>
+        <p class="eg">It chooses <em>which</em> reducer, never the order inside it. Inside a reducer, keys always arrive sorted.</p></div>
+      <div class="idea"><h3><span class="num">7</span>Counters: the job's dashboard</h3>
+        <p>Every job prints counters: how many records were read, written, combined, shuffled and spilled. Reading them is the main skill of this lab.</p>
+        <table class="wtab"><tr><th>Counter</th><th>Answers</th></tr><tr><td>Map input records</td><td>Did I read everything?</td></tr><tr><td>Reduce shuffle bytes</td><td>How much went over the network?</td></tr><tr><td>Spilled Records</td><td>Did memory run short?</td></tr></table></div>
+      <div class="idea"><h3><span class="num">8</span>Skew: one reducer does all the work</h3>
+        <div class="vis"><div class="skewv"><i style="height:90%"></i><i style="height:14%"></i><i style="height:13%"></i><i style="height:14%"></i></div></div>
+        <p>If one key has most of the data, the reducer that owns it is slow, and the whole job waits for it. More machines do not help: one key always goes to one reducer.</p></div>
+      <div class="idea"><h3><span class="num">9</span>Compile, package, submit</h3>
+        <div class="vis flowv"><span>.java</span><b>javac</b><span>.class</span><b>jar</b><span class="h">hostbytes.jar</span><b>hadoop jar</b><span class="y">YARN</span></div>
+        <p>You compile against <code>hadoop classpath</code>, the exact libraries of your cluster, so compile time and run time agree.</p></div>
+    </div>
+    <h3 class="mt-4 mb-2">Words you will meet</h3>
+    <dl class="gloss">
+      <div><dt>Input split</dt><dd>The piece of input one map task reads; about one HDFS block.</dd></div>
+      <div><dt>Mapper / Reducer</dt><dd>Your two Java classes: map() is called once per line, reduce() once per key.</dd></div>
+      <div><dt>Driver</dt><dd>The main class that configures the job and submits it to YARN.</dd></div>
+      <div><dt>Part file</dt><dd><code>part-r-00000</code>: the output of reducer 0. One per reducer.</dd></div>
+      <div><dt>Spill</dt><dd>When a task's in-memory buffer fills up, it writes to local disk. Many spills mean memory pressure.</dd></div>
+      <div><dt>Job history</dt><dd>The record of finished jobs (counters, task timings), served by the JobHistoryServer on port 19888.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section id="sim" class="pt-3">
+  <div class="container-xxl">
+    <h2 class="mb-1">The simulator</h2>
+    <p class="muted mb-2">Press <strong>Run</strong> on each command in order. Under each command: a plain-language explanation, what changed, how long it takes on the VM, and a red note where the lab sheet needs a fix. On the right: the machine, your code, the job as a pipeline, and its counters.</p>
+    <div class="rail" id="rail" role="tablist" aria-label="Lab steps"></div>
+    <div class="row g-3 mt-1">
+      <div class="col-lg-6">
+        <div id="stepPane"></div>
+        <div class="term-wrap mt-2"><div class="term-tabs" id="termTabs"></div><pre class="term-body" id="termBody" aria-live="polite" tabindex="0"></pre></div>
+      </div>
+      <div class="col-lg-6">
+        <div class="sys" id="sys">
+          <div class="statusbar" id="statusbar"></div>
+          <div class="zone" id="zMachine"><div class="zone-h"><b>The machine (ubuntuOS)</b><span>local files and Java processes</span></div><div id="machine"></div></div>
+          <div class="zone" id="zCode"><div class="zone-h"><b>Your code</b><span id="codeState"></span></div><div id="code"></div></div>
+          <div class="zone" id="zJob"><div class="zone-h"><b>The job, as a pipeline</b><span id="jobState"></span></div><div id="pipe"></div></div>
+          <div class="zone" id="zCnt"><div class="zone-h"><b>Counters and results</b><span>the numbers for your report</span></div><div id="cnt"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="concl" id="conclusion">
+  <div class="container-xxl">
+    <h2 class="mb-3">What this lab teaches</h2>
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <ol class="lessons">
+          <li><strong>Map, shuffle, reduce.</strong> Map tasks follow the input blocks (3 here); reduce tasks are your choice, and each writes one part file.</li>
+          <li><strong>Counters tell you what really happened.</strong> The first run "succeeded" but wrote nothing; only the <code>malformed_lines</code> counter showed every line had been rejected. Never trust a job that finished; read its counters.</li>
+          <li><strong>The shuffle is the cost.</strong> Without a combiner, 2,000,000 records (about 36 MB) crossed it. With one, 600 records (about 11 KB): a 99.97% reduction, with identical results.</li>
+          <li><strong>A combiner must be safe.</strong> Sum, count, min and max are; an average is not, unless you carry (sum, count) pairs.</li>
+          <li><strong>The partitioner decides placement, the sort decides order.</strong> Hash spreads keys randomly; a custom rule grouped 50 hosts per reducer. Each file is sorted, the set is not.</li>
+          <li><strong>Skew defeats parallelism.</strong> One host with 60% of the events made one reducer handle seven times the records of the others. Adding reducers cannot split a single key.</li>
+          <li><strong>History needs its server.</strong> Job history and the "History" link work only with the JobHistoryServer running.</li>
+          <li><strong>It took about 90 lines of Java in three files to compute one grouped sum</strong> (about 105 with the partitioner; the sheet says roughly 120). Keep the number for lab 4.2, where Spark does the same in a few lines.</li>
+        </ol>
+      </div>
+      <div class="col-lg-5">
+        <div class="panel mb-3">
+          <div class="panel-title">Your deliverable, collected as you run the simulator</div>
+          <ul class="checklist" id="checklist">
+            <li data-k="src">Both Java source files<small>steps 2 and 3</small></li>
+            <li data-k="c1">Counter block without a combiner<small>step 5, after the fix</small></li>
+            <li data-k="c2">Counter block with a combiner, and the reduction %<small>step 6</small></li>
+            <li data-k="part">Partitioner code<small>step 9</small></li>
+            <li data-k="skew">Slowest reducer and why<small>steps 10 and 11</small></li>
+          </ul>
+        </div>
+        <a class="btn btn-ink w-100 py-2" href="activity.html">Take the graded activity</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer><div class="container-xxl">Big Data Analytics, Lab 4.1: Writing MapReduce Programs. Record counts, sums, hash partitions and skew figures come from running the real data through the same logic; job IDs, PIDs and timings are representative.</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=(s,r=document)=>r.querySelector(s);
+const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const hasGsap=typeof window.gsap!=='undefined';
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const HOME='/home/hadoop', L4='/user/hadoop/lab4';
+let fastMode=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const wait=ms=>fastMode?Promise.resolve():sleep(ms);
+const n=x=>Number(x).toLocaleString();
+
+/* hero animation */
+(function(){ const ids=['hl0','hl1','hl2','hl3','hl4']; ids.forEach(id=>{ const el=$('#'+id); el.innerHTML='<i></i>'.repeat(id==='hl4'?2:id==='hl3'?4:12); }); if(reduceMotion) return; let k=0; setInterval(()=>{ ids.forEach((id,i)=>$('#'+id).classList.toggle('on',i===k%5)); k++; },900); })();
+
+/* ================= data (from the real dataset) ================= */
+const FIRST5=[['host000','2489180004'],['host001','2500045013'],['host002','2511469228'],['host003','2448795212'],['host004','2509272999']];
+const PART4={keys:[51,49,49,51],bytes:[969,931,931,969],heads:[[['host001','2500045013'],['host005','2468727189'],['host009','2523280302']],[['host002','2511469228'],['host006','2490051441'],['host013','2557494063']],[['host003','2448795212'],['host007','2486665803'],['host010','2450401560']],[['host000','2489180004'],['host004','2509272999'],['host008','2517511900']]]};
+const CUSTOM_HEADS=[[['host000','2489180004'],['host001','2500045013'],['host002','2511469228']],[['host050','2526300379'],['host051','2502018737'],['host052','2494751875']]];
+const SKEW={bytes:36779366,host007:601991,custom:[700267,100346,99646,99741]};
+
+/* ================= java sources ================= */
+const MAPPER=`import java.io.IOException;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+
+public class HostBytesMapper extends Mapper<LongWritable, Text, Text, LongWritable> {
+
+    private final Text outKey = new Text();
+    private final LongWritable outValue = new LongWritable();
+
+    @Override
+    protected void map(LongWritable key, Text value, Context context)
+            throws IOException, InterruptedException {
+        String line = value.toString();
+        try {
+            String host  = extract(line, "host");
+            long   bytes = Long.parseLong(extract(line, "bytes"));
+            outKey.set(host);
+            outValue.set(bytes);
+            context.write(outKey, outValue);
+        } catch (Exception e) {
+            context.getCounter("custom", "malformed_lines").increment(1);
+        }
+    }
+
+    /** Minimal field extractor so the lab needs no external JSON library. */
+    private String extract(String json, String field) {
+        int i = json.indexOf("\\"" + field + "\\":");
+        if (i < 0) throw new IllegalArgumentException(field);
+        int start = i + field.length() + 3;
+        if (json.charAt(start) == '\\"') {
+            start++;
+            return json.substring(start, json.indexOf('\\"', start));
+        }
+        int end = start;
+        while (end < json.length() && "-0123456789".indexOf(json.charAt(end)) >= 0) end++;
+        return json.substring(start, end);
+    }
+}`;
+const FIXLINE="        while (start < json.length() && json.charAt(start) == ' ') start++;";
+const REDUCER=`import java.io.IOException;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+
+public class HostBytesReducer extends Reducer<Text, LongWritable, Text, LongWritable> {
+    private final LongWritable result = new LongWritable();
+
+    @Override
+    protected void reduce(Text key, Iterable<LongWritable> values, Context context)
+            throws IOException, InterruptedException {
+        long sum = 0;
+        for (LongWritable v : values) { sum += v.get(); }
+        result.set(sum);
+        context.write(key, result);
+    }
+}`;
+const DRIVER=`import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class HostBytesDriver {
+    public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.err.println("usage: HostBytesDriver <in> <out> [reducers] [combiner:true|false]");
+            System.exit(2);
+        }
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "host bytes");
+        job.setJarByClass(HostBytesDriver.class);
+        job.setMapperClass(HostBytesMapper.class);
+        job.setReducerClass(HostBytesReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(LongWritable.class);
+
+        int reducers = args.length > 2 ? Integer.parseInt(args[2]) : 1;
+        job.setNumReduceTasks(reducers);
+
+        boolean combiner = args.length > 3 && Boolean.parseBoolean(args[3]);
+        if (combiner) { job.setCombinerClass(HostBytesReducer.class); }
+
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}`;
+const PARTITIONER=`import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Partitioner;
+
+public class HostRangePartitioner extends Partitioner<Text, LongWritable> {
+    @Override
+    public int getPartition(Text key, LongWritable value, int numPartitions) {
+        try {
+            int n = Integer.parseInt(key.toString().replaceAll("[^0-9]", ""));
+            return (n / 50) % numPartitions;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+}`;
+
+/* ================= state ================= */
+const S={busy:false,mode:'shell',cwd:HOME,lines:[],fs:new Map(),fresh:new Set(),procs:[],pid:6100,
+  hdfs:false,yarn:false,hist:false,
+  src:{},compiled:false,jarFresh:false,mapperFixed:false,partitionerInDriver:false,lastEdit:null,
+  hdfsOut:{},runs:{},current:null,jobs:[],evidence:{}};
+function addFs(path,type,note){ const parts=path.split('/'); for(let i=2;i<parts.length;i++){ const pre=parts.slice(0,i).join('/'); if(pre!=='/home'&&!S.fs.has(pre)) S.fs.set(pre,{type:'dir'}); } if(!S.fs.has(path)){ S.fresh.add(path); setTimeout(()=>S.fresh.delete(path),4000); } S.fs.set(path,{type,note}); }
+['/opt','/opt/hadoop','/tmp',HOME].forEach(p=>S.fs.set(p,{type:'dir'})); S.fresh.clear();
+function newPid(){ S.pid+=rnd(9,230); return S.pid; }
+function addProc(key,name,note,job){ S.procs=S.procs.filter(p=>p.key!==key); S.procs.push({key,name,note,pid:newPid(),job}); }
+function rmProc(key){ S.procs=S.procs.filter(p=>p.key!==key); }
+function srcText(name){ if(name==='HostBytesMapper.java') return S.mapperFixed?MAPPER.replace('        int start = i + field.length() + 3;\n','        int start = i + field.length() + 3;\n'+FIXLINE+'\n'):MAPPER; if(name==='HostBytesDriver.java') return S.partitionerInDriver?DRIVER.replace('        FileInputFormat.addInputPath','        job.setPartitionerClass(HostRangePartitioner.class);\n        FileInputFormat.addInputPath'):DRIVER; return {'HostBytesReducer.java':REDUCER,'HostRangePartitioner.java':PARTITIONER}[name]; }
+const loc=name=>srcText(name).split('\n').length;
+const idxOf=(f,t)=>srcText(f).split('\n').findIndex(l=>l.includes(t));
+function around(f,t,before,after,key){ const i=idxOf(f,t); return {file:f,from:Math.max(0,i-before),to:i+after,[key]:[i]}; }
+
+/* ================= terminal ================= */
+let termDirty=true, jump=false;
+function tpush(h){ S.lines.push(h); if(S.lines.length>700) S.lines.splice(0,S.lines.length-700); termDirty=true; }
+function out(text,cls){ String(text).split('\n').forEach(l=>tpush(cls?`<span class="${cls}">${esc(l)}</span>`:esc(l))); }
+function prompt(){ const c=S.cwd===HOME?'~':S.cwd.startsWith(HOME+'/')?'~'+S.cwd.slice(HOME.length):S.cwd; return `<span class="pr">hadoop@ubuntuOS</span>:<span class="pa">${esc(c)}</span>$ `; }
+function echo(code){ code.split('\n').forEach((l,i)=>tpush((i===0?prompt():'<span class="dim">&gt; </span>')+esc(l))); }
+function renderTerm(){ $('#termTabs').innerHTML=`<button class="on"><span class="dot ${S.mode==='busy'?'busy':''}"></span>Terminal: bash</button>`; const b=$('#termBody'), atB=b.scrollHeight-b.scrollTop-b.clientHeight<40; b.innerHTML=S.lines.join('\n')+(S.mode==='busy'?'':'\n'+prompt()); if(atB||jump){ b.scrollTop=b.scrollHeight; jump=false; } termDirty=false; }
+function fly(fromEl,toEl,color,k=1){ if(fastMode||!fromEl||!toEl||reduceMotion||!hasGsap) return; for(let i=0;i<k;i++) setTimeout(()=>{ const a=fromEl.getBoundingClientRect(), b=toEl.getBoundingClientRect(); if(a.bottom<0||a.top>innerHeight||b.bottom<0||b.top>innerHeight) return; const d=document.createElement('div'); d.className='dot'; d.style.background=color; $('#flight').appendChild(d); gsap.fromTo(d,{x:a.left+a.width/2,y:a.top+a.height/2},{x:b.left+b.width/2+rnd(-14,14),y:b.top+b.height/2,duration:.55,ease:'power1.inOut',onComplete:()=>d.remove()}); },i*90); }
+function stamp(){ const d=new Date(); return `2026-10-17 ${d.toTimeString().slice(0,8)},${String(rnd(0,999)).padStart(3,'0')}`; }
+
+/* ================= the job model ================= */
+let jobNo=1; const APP='1791736200401';
+function model(cfg){
+  // cfg: {name,input:'events'|'skew',R,combiner,partitioner:'hash'|'custom',fixed}
+  const ev=cfg.input==='events', N=ev?2000000:1000000, M=ev?3:1, keys=200;
+  const okLines=cfg.fixed?N:0, R=cfg.R;
+  const mapOut=okLines, mapBytes=mapOut*16;
+  const combOut=cfg.combiner&&mapOut?M*keys:0;
+  const toShuffle=cfg.combiner?combOut:mapOut;
+  const mat=toShuffle*18+M*R*6;
+  let perRed;
+  if(!okLines) perRed=Array(R).fill(0);
+  else if(cfg.input==='skew') perRed=SKEW.custom.slice(0,R);
+  else if(cfg.combiner){ perRed=cfg.partitioner==='custom'?Array(R).fill(0).map((_,i)=>i<4?150:0):(R===4?PART4.keys.map(k=>k*M):[toShuffle]); }
+  else perRed=R===1?[mapOut]:Array(R).fill(Math.round(mapOut/R));
+  const keysPer=!okLines?Array(R).fill(0):R===1?[200]:cfg.partitioner==='custom'?[50,50,50,50]:PART4.keys;
+  const outBytes=!okLines?0:(R===1?3800:cfg.partitioner==='custom'?950*4:3800);
+  const redTime=perRed.map(x=>Math.max(3,Math.round(3+x/(cfg.input==='skew'?38000:120000))));
+  return {N,M,R,mapOut,mapBytes,combIn:cfg.combiner?mapOut:0,combOut,mat,perRed,keysPer,outBytes,spilled:2*toShuffle,groups:okLines?keys:0,malformed:N-okLines,redTime,secs:ev?(cfg.combiner?31:48):(cfg.R>1?44:36),inBytes:ev?340336945:SKEW.bytes};
+}
+function counterBlock(m,cfg){
+  const L=[`Counters: ${m.malformed?55:54}`,'\tFile System Counters',`\t\tFILE: Number of bytes read=${m.mat-m.M*m.R*6+m.R*6}`,`\t\tFILE: Number of bytes written=${1412300+m.mat*2}`,`\t\tHDFS: Number of bytes read=${m.inBytes+m.M*115}`,`\t\tHDFS: Number of bytes written=${m.outBytes}`,`\t\tHDFS: Number of read operations=${m.M*3+m.R*2+3}`,'\tJob Counters ',`\t\tLaunched map tasks=${m.M}`,`\t\tLaunched reduce tasks=${m.R}`,`\t\tData-local map tasks=${m.M}`,`\t\tTotal time spent by all map tasks (ms)=${m.M*rnd(14000,19000)}`,`\t\tTotal time spent by all reduce tasks (ms)=${m.redTime.reduce((a,b)=>a+b,0)*1000}`,
+   '\tMap-Reduce Framework',`\t\tMap input records=${m.N}`,`\t\tMap output records=${m.mapOut}`,`\t\tMap output bytes=${m.mapBytes}`,`\t\tMap output materialized bytes=${m.mat}`,`\t\tInput split bytes=${m.M*115}`,`\t\tCombine input records=${m.combIn}`,`\t\tCombine output records=${m.combOut}`,`\t\tReduce input groups=${m.groups}`,`\t\tReduce shuffle bytes=${m.mat}`,`\t\tReduce input records=${cfg.combiner?m.combOut:m.mapOut}`,`\t\tReduce output records=${m.groups}`,`\t\tSpilled Records=${m.spilled}`,`\t\tShuffled Maps =${m.M*m.R}`,'\t\tFailed Shuffles=0',`\t\tMerged Map outputs=${m.M*m.R}`,`\t\tGC time elapsed (ms)=${rnd(300,900)}`,`\t\tCPU time spent (ms)=${rnd(20000,42000)}`,`\t\tPhysical memory (bytes) snapshot=${rnd(1200,1600)*1048576}`,`\t\tVirtual memory (bytes) snapshot=${rnd(9800,10600)*1048576}`,`\t\tTotal committed heap usage (bytes)=${rnd(900,1100)*1048576}`,
+   '\tShuffle Errors','\t\tBAD_ID=0','\t\tCONNECTION=0','\t\tIO_ERROR=0','\t\tWRONG_LENGTH=0','\t\tWRONG_MAP=0','\t\tWRONG_REDUCE=0','\tFile Input Format Counters ',`\t\tBytes Read=${m.inBytes}`,'\tFile Output Format Counters ',`\t\tBytes Written=${m.outBytes}`];
+  if(m.malformed) L.push('\tcustom',`\t\tmalformed_lines=${m.malformed}`);
+  return L.join('\n');
+}
+async function runJob(cfg,{tee}={}){
+  const m=model(cfg), id=String(jobNo++).padStart(4,'0'), job=`job_${APP}_${id}`;
+  S.current={cfg,m,phase:'start',map:0,red:0,job}; S.mode='busy';
+  const lines=[`${stamp()} INFO client.DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at /0.0.0.0:8032`,`${stamp()} WARN mapreduce.JobResourceUploader: Hadoop command-line option parsing not performed. Implement the Tool interface and execute your application with ToolRunner to remedy this.`,`${stamp()} INFO input.FileInputFormat: Total input files to process : 1`,`${stamp()} INFO mapreduce.JobSubmitter: number of splits:${m.M}`,`${stamp()} INFO impl.YarnClientImpl: Submitted application application_${APP}_${id}`,`${stamp()} INFO mapreduce.Job: The url to track the job: http://ubuntuOS:8088/proxy/application_${APP}_${id}/`,`${stamp()} INFO mapreduce.Job: Running job: ${job}`,`${stamp()} INFO mapreduce.Job: Job ${job} running in uber mode : false`];
+  out(lines.join('\n'),'dim');
+  addProc('am','MRAppMaster','runs this job for YARN',true); addProc('yc',`YarnChild × ${Math.min(4,m.M+m.R)}`,'map and reduce tasks',true);
+  const steps=[[0,0,'map'],[33,0,'map'],[67,0,'map'],[100,0,'shuffle'],[100,cfg.input==='skew'?75:50,'reduce'],[100,100,'done']];
+  for(const [mp,rd,ph] of steps){ S.current.map=mp; S.current.red=rd; S.current.phase=ph; out(`${stamp()} INFO mapreduce.Job:  map ${mp}% reduce ${rd}%`,'dim'); renderAll(); animPhase(ph); await wait(ph==='reduce'&&cfg.input==='skew'?1300:520); }
+  out(`${stamp()} INFO mapreduce.Job: Job ${job} completed successfully`,'dim'); out(`${stamp()} INFO mapreduce.Job: ${counterBlock(m,cfg)}`);
+  rmProc('am'); rmProc('yc'); S.mode='shell';
+  const files=[];
+  for(let r=0;r<cfg.R;r++) files.push(`part-r-${String(r).padStart(5,'0')}`);
+  S.hdfsOut[cfg.out]={files,cfg,m};
+  S.runs[cfg.name]={cfg,m,job,app:`application_${APP}_${id}`};
+  S.jobs.push({job,app:`application_${APP}_${id}`,name:cfg.out});
+  S.current.phase='done';
+  if(tee) addFs(`${HOME}/lab4/${tee}`,'file');
+  return m;
+}
+function animPhase(ph){ const map={map:['#pIn','#pMap'],shuffle:['#pMap','#pRed'],reduce:['#pRed','#pOut']}[ph]; if(map) fly($(map[0]),$(map[1]),ph==='shuffle'?'var(--danger)':'var(--yarn)',ph==='shuffle'?6:3); }
+
+/* ================= rendering ================= */
+function renderAll(){
+  const sv=(on,l)=>`<span class="svc ${on?'on':''}">${l}</span>`;
+  $('#statusbar').innerHTML='Running: '+sv(S.hdfs,'HDFS')+sv(S.yarn,'YARN')+sv(S.hist,'JobHistoryServer')+(S.current&&S.current.phase!=='done'?'<span class="svc on">MapReduce job</span>':'');
+  // machine
+  const paths=[...S.fs.keys()].sort((a,b)=>a.localeCompare(b));
+  const fs=paths.map(p=>{ const nd=S.fs.get(p), depth=p.split('/').length-2, name=p===HOME?'/home/hadoop':p.slice(p.lastIndexOf('/')+1)||'/'; let h=`<span class="${nd.type==='dir'?'d':''} ${S.fresh.has(p)?'new':''}">${esc(name)}${nd.type==='dir'?'/':''}${p===HOME?' (~)':''}</span>`; if(nd.note) h+=`<span class="warnb">${nd.note}</span>`; if(p===S.cwd) h+='<span class="cwd">you are here</span>'; return `<div class="n" style="padding-left:${Math.max(0,depth)*12}px">${h}</div>`; }).join('');
+  const pr=S.procs.length?S.procs.map(p=>`<div class="proc ${p.job?'job':''}"><b>${esc(p.name)}</b><small>PID ${p.pid}${p.note?', '+esc(p.note):''}</small></div>`).join(''):'<div class="none">Nothing running yet.</div>';
+  $('#machine').innerHTML=`<div class="machine-grid"><div><div class="mini-h">Local folders</div><div class="fs">${fs}</div></div><div><div class="mini-h">Java processes (what <code>jps</code> lists)</div><div class="procs">${pr}</div></div></div>`;
+  // code
+  const files=Object.keys(S.src);
+  $('#codeState').textContent=files.length?`${files.reduce((a,f)=>a+loc(f),0)} lines of Java${S.compiled?(S.jarFresh?', compiled into hostbytes.jar':', jar is out of date: recompile'):''}`:'';
+  let c='';
+  if(!files.length) c='<div class="none">The Java files are written in steps 2, 3 and 9.</div>';
+  else{
+    c+='<div class="srcchips">'+files.map(f=>`<span class="srcchip ${S.lastEdit&&S.lastEdit.file===f?'on':''}">${f}<small>${loc(f)} lines</small></span>`).join('')+'</div>';
+    if(S.lastEdit){ const txt=srcText(S.lastEdit.file).split('\n'); const hl=S.lastEdit.hl||[]; const from=S.lastEdit.from||0, to=S.lastEdit.to||Math.min(txt.length,from+18);
+      c+=`<div class="mini-h mt-2">${S.lastEdit.file}${S.lastEdit.why?' <span class="muted" style="font-weight:400">: '+S.lastEdit.why+'</span>':''}</div><pre class="srcview">${txt.slice(from,to).map((l,i)=>`<span class="${hl.includes(from+i)?'hlline':''} ${S.lastEdit.bad&&S.lastEdit.bad.includes(from+i)?'badline':''}"><i>${from+i+1}</i>${esc(l)||' '}</span>`).join('')}</pre>`; }
+  }
+  $('#code').innerHTML=c;
+  // pipeline
+  $('#jobState').textContent=S.yarn?'ResourceManager :8088':'';
+  const cur=S.current;
+  if(!cur){ $('#pipe').innerHTML='<div class="none">The first job runs in step 5.</div>'; }
+  else{
+    const {cfg,m}=cur, ph=cur.phase, mxR=Math.max(1,...m.perRed);
+    const act=p=>({map:['in','map'],shuffle:['map','sh','red'],reduce:['red','out'],done:[]}[ph]||[]).includes(p)?'act':'';
+    let h=`<div class="pmeta">${esc(cfg.label)} <span class="muted">· ${cfg.input==='events'?'events.json, 325 MB':'skewed.json, 35 MB'} · ${cfg.R} reducer${cfg.R>1?'s':''} · combiner ${cfg.combiner?'on':'off'} · ${cfg.partitioner==='custom'?'HostRangePartitioner':'hash partitioner'}</span></div>`;
+    h+=`<div class="pgrid"><div class="pcol ${act('in')}" id="pIn"><div class="ph">Input splits</div>${[...Array(m.M)].map((_,i)=>`<div class="pbox in">split ${i}<small>${cfg.input==='events'?(i<2?'128 MB':'68.6 MB'):'35 MB'}</small></div>`).join('')}</div>`;
+    h+=`<div class="pcol ${act('map')}" id="pMap"><div class="ph">Map tasks</div>${[...Array(m.M)].map((_,i)=>`<div class="pbox map">map ${i}<small>${n(Math.round(m.N/m.M))} lines in<br>${n(Math.round(m.mapOut/m.M))} pairs out${cfg.combiner?'<br><b class="cmb">combiner: '+n(Math.round(m.combOut/m.M))+' out</b>':''}</small></div>`).join('')}</div>`;
+    h+=`<div class="pcol shc ${act('sh')}"><div class="ph">Shuffle</div><div class="shbar"><div class="shfill" style="height:${Math.max(3,Math.min(100,Math.log10(Math.max(10,m.mat))/Math.log10(40000000)*100))}%"></div></div><small class="tnum">${m.mat>1e6?(m.mat/1048576).toFixed(1)+' MB':n(m.mat)+' bytes'}</small><small>${cfg.partitioner==='custom'?'by host range':'by hash'}</small></div>`;
+    h+=`<div class="pcol ${act('red')}" id="pRed"><div class="ph">Reduce tasks</div>${m.perRed.map((x,i)=>`<div class="pbox red ${cfg.input==='skew'&&x===mxR?'slow':''}">reduce ${i}<small>${n(x)} records in<br>${m.keysPer[i]} keys</small><div class="rtime"><i style="width:${x/mxR*100}%"></i></div></div>`).join('')}</div>`;
+    h+=`<div class="pcol ${act('out')}" id="pOut"><div class="ph">Output</div>${m.perRed.map((x,i)=>`<div class="pbox out">part-r-${String(i).padStart(5,'0')}<small>${m.keysPer[i]} lines</small></div>`).join('')}</div></div>`;
+    h+=`<div class="pb"><span>map</span><div class="bar"><i style="width:${cur.map}%"></i></div><span>${cur.map}%</span></div><div class="pb"><span>reduce</span><div class="bar"><i style="width:${cur.red}%"></i></div><span>${cur.red}%</span></div>`;
+    $('#pipe').innerHTML=h;
+  }
+  // counters
+  let k='';
+  const show=(label,r)=>r?`<td>${n(r.m[label])}</td>`:'<td class="muted">not run</td>';
+  const runs=S.runs;
+  if(Object.keys(runs).length){
+    const cols=[['bug','Step 5 as written'],['base','No combiner'],['comb','Combiner']].filter(c=>runs[c[0]]);
+    k+=`<table class="res"><tr><th>Counter</th>${cols.map(c=>`<th>${c[1]}</th>`).join('')}</tr>`;
+    [['Map input records','N'],['Map output records','mapOut'],['Combine output records','combOut'],['Reduce shuffle bytes','mat'],['Reduce input groups','groups'],['Spilled Records','spilled'],['custom: malformed_lines','malformed']].forEach(([lab,key])=>{ k+=`<tr><td>${lab}</td>${cols.map(c=>`<td class="${key==='malformed'&&runs[c[0]].m[key]?'badtd':''}">${n(runs[c[0]].m[key])}</td>`).join('')}</tr>`; });
+    k+='</table>';
+    if(runs.base&&runs.comb){ const red=(1-runs.comb.m.mat/runs.base.m.mat)*100; k+=`<div class="headline">Reduce shuffle bytes fell from <b>${n(runs.base.m.mat)}</b> to <b>${n(runs.comb.m.mat)}</b>: a <b class="big">${red.toFixed(2)}%</b> reduction, with identical results. That is the headline number for your report.</div>`; S.evidence.c2=true; }
+    if(runs.skew){ const m=runs.skew.m, mx=Math.max(...m.redTime); k+=`<div class="mini-h mt-2">Skew run: time per reduce task</div>`+m.redTime.map((t,i)=>`<div class="sizes"><span>reduce ${i}</span><div class="b" style="background:${t===mx?'var(--danger)':'var(--yarn)'};width:${t/mx*100}%"></div><span>${t} s</span></div>`).join('')+`<div style="font-size:.76rem;margin-top:.3rem">Reducer 0 received ${n(m.perRed[0])} records, about seven times each of the others, because host007 (60% of all events) is in its range, host000 to host049.</div>`; }
+  }
+  if(S.outList) k+=`<div class="mini-h mt-2">${S.outList.title}</div><div>${S.outList.items.map(x=>`<span class="filebox">${x}</span>`).join('')}</div>`;
+  if(!k) k='<div class="none">Counters appear after the first job.</div>';
+  $('#cnt').innerHTML=k;
+  document.querySelectorAll('#checklist li').forEach(li=>li.classList.toggle('got',!!S.evidence[li.dataset.k]));
+  if(termDirty) renderTerm();
+}
+setInterval(()=>{ if(!fastMode) renderAll(); },400);
+
+/* ================= steps ================= */
+const C=o=>o;
+const RUN=(out,R,comb)=>`hdfs dfs -rm -r -f /user/$USER/lab4/${out}\nhadoop jar ~/lab4/hostbytes.jar HostBytesDriver \\\n  /user/$USER/lab3/events.json /user/$USER/lab4/${out} ${R} ${comb}`;
+function rmOut(o){ out(`Deleted /user/hadoop/lab4/${o}`); delete S.hdfsOut[o]; }
+const STEPS=[
+ {title:'Set up the project directory',short:'set up',intro:'Start Hadoop, make the project folders, and check the classpath you will compile against.',cmds:[
+  C({label:'Start HDFS and YARN',code:'start-dfs.sh && start-yarn.sh',run:async()=>{ out('Starting namenodes on [localhost]'); await wait(250); out('Starting datanodes'); await wait(250); out('Starting secondary namenodes [ubuntuOS]'); addProc('nn','NameNode','HDFS metadata'); addProc('dn','DataNode','HDFS blocks'); addProc('snn','SecondaryNameNode'); S.hdfs=true; renderAll(); await wait(300); out('Starting resourcemanager'); await wait(250); out('Starting nodemanagers'); addProc('rm','ResourceManager','YARN, web UI :8088'); addProc('nm','NodeManager','runs map and reduce tasks'); S.yarn=true; },
+    simple:'Turns on Hadoop: HDFS to store files and YARN to run jobs.',what:'These are the five daemons from lab 1.1. A MapReduce job needs both: it reads from HDFS and YARN gives it containers to run in.',see:'Five Java processes.',vm:'about 30 seconds',focus:'zMachine'}),
+  C({label:'Make the project folders',code:'mkdir -p ~/lab4/src ~/lab4/classes && cd ~/lab4',run:()=>{ addFs(HOME+'/lab4/src','dir'); addFs(HOME+'/lab4/classes','dir'); S.cwd=HOME+'/lab4'; },simple:'Creates a folder for the Java sources and one for the compiled classes, then moves into the project.',what:'<code>src</code> holds .java files you write; <code>classes</code> holds .class files that javac produces.',see:'~/lab4 with src/ and classes/; "you are here" moves to ~/lab4.',vm:'instant',focus:'zMachine'}),
+  C({label:'Look at the classpath',code:"hadoop classpath | tr ':' '\\n' | head -5",run:()=>out('/opt/hadoop/etc/hadoop\n/opt/hadoop/share/hadoop/common/lib/*\n/opt/hadoop/share/hadoop/common/*\n/opt/hadoop/share/hadoop/hdfs\n/opt/hadoop/share/hadoop/hdfs/lib/*'),simple:'Prints the list of Hadoop library folders, one per line.',what:'<code>hadoop classpath</code> prints every jar Hadoop itself uses, joined with colons. <code>tr</code> turns the colons into new lines and <code>head -5</code> keeps the first five. Compiling against exactly this list means the jar you build matches the cluster it runs on.',see:'Five paths under /opt/hadoop.',vm:'instant',focus:'zMachine'}),
+  C({label:'Check the Hadoop version',code:'echo "---"\nhadoop version | head -1',run:()=>out('---\nHadoop 3.3.6'),simple:'Shows which Hadoop version you are compiling for.',what:'If you compiled against one version and ran on another, you would get <code>NoSuchMethodError</code> at run time.',see:'Hadoop 3.3.6.',vm:'instant',focus:'zMachine',fix:'You need the JDK (with <code>javac</code>), not just the Java runtime. Check with <code>javac -version</code>; if it is missing, <code>sudo apt install -y openjdk-11-jdk</code>.'})]
+  ,take:['Map and reduce tasks run inside YARN; data comes from HDFS.','Compile against <code>hadoop classpath</code> so your jar matches the cluster.']},
+ {title:'Write the Mapper',short:'Mapper',intro:'The mapper turns each JSON line into a (host, bytes) pair.',cmds:[
+  C({label:'Write HostBytesMapper.java',code:"cat > ~/lab4/src/HostBytesMapper.java <<'EOF'\n"+MAPPER+"\nEOF",run:()=>{ S.src['HostBytesMapper.java']=1; addFs(HOME+'/lab4/src/HostBytesMapper.java','file'); S.lastEdit={file:'HostBytesMapper.java',from:5,to:24,hl:[5,11,12,13,16,17,18,19,22],why:'the class and map()'}; },
+    simple:'Writes the mapper: for every line, find the host and the bytes, and send out the pair (host, bytes). If a line cannot be read, count it as malformed instead of crashing.',what:'<code>Mapper&lt;LongWritable, Text, Text, LongWritable&gt;</code>: input key = position of the line in the file, input value = the line, output key = host, output value = bytes. One <code>Text</code> and one <code>LongWritable</code> are reused for every line, which avoids creating millions of objects. <code>extract()</code> is a tiny hand-written JSON reader.',see:'HostBytesMapper.java appears in src, and the code panel shows the class and map().',vm:'instant',focus:'zCode'}),
+  C({label:'Count its lines',code:'wc -l ~/lab4/src/HostBytesMapper.java',run:()=>out(`${loc('HostBytesMapper.java')} /home/hadoop/lab4/src/HostBytesMapper.java`),simple:'Counts the lines in the file.',what:'Remember this number; the lab ends by totalling the Java you wrote.',see:`${MAPPER.split('\n').length} lines.`,vm:'instant',focus:'zCode'})]
+  ,take:['A mapper reads one record at a time and emits zero or more (key, value) pairs.','Hadoop types like Text and LongWritable are compact and reusable.','Bad input should be counted, not silently dropped: that counter will matter in step 5.']},
+ {title:'Write the Reducer and the driver',short:'Reducer + driver',intro:'The reducer adds up each host\'s bytes; the driver configures and submits the job.',cmds:[
+  C({label:'Write the reducer and the driver',code:"cat > ~/lab4/src/HostBytesReducer.java <<'EOF'\n"+REDUCER+"\nEOF\n\ncat > ~/lab4/src/HostBytesDriver.java <<'EOF'\n"+DRIVER+"\nEOF",run:()=>{ S.src['HostBytesReducer.java']=1; S.src['HostBytesDriver.java']=1; addFs(HOME+'/lab4/src/HostBytesReducer.java','file'); addFs(HOME+'/lab4/src/HostBytesDriver.java','file'); S.lastEdit={file:'HostBytesDriver.java',from:16,to:34,hl:[18,19,20,24,25,27,28],why:'how the job is configured'}; S.evidence.src=true; },
+    simple:'The reducer receives one host and all its byte values, and adds them up. The driver is the main program: it says which mapper and reducer to use, how many reducers, whether to use a combiner, and where input and output are.',what:'The reducer gets an <code>Iterable</code>: you can loop over it once, and Hadoop reuses the same object each time, so never store the values without copying them. In the driver, <code>setJarByClass</code> tells Hadoop which jar to send to the cluster; arguments 3 and 4 choose the number of reducers and the combiner. The reducer doubles as the combiner, which is safe because addition can be done in any order and in any grouping.',see:'Two more files; the code panel shows the driver\'s configuration lines.',vm:'instant',focus:'zCode'}),
+  C({label:'List the sources',code:'ls ~/lab4/src/',run:()=>out('HostBytesDriver.java  HostBytesMapper.java  HostBytesReducer.java'),simple:'Checks all three files are there.',what:'',see:'Three .java files.',vm:'instant',focus:'zMachine'})]
+  ,take:['reduce() is called once per key, with all of that key\'s values.','The driver wires everything together and submits the job.']},
+ {title:'Compile and package',short:'compile',intro:'Compile the three classes against the cluster\'s classpath and pack them into a jar.',cmds:[
+  C({label:'Compile',code:'cd ~/lab4\njavac -classpath $(hadoop classpath) -d classes src/*.java',run:async()=>{ S.cwd=HOME+'/lab4'; S.mode='busy'; await wait(900); S.mode='shell'; ['HostBytesDriver','HostBytesMapper','HostBytesReducer'].forEach(c=>addFs(HOME+'/lab4/classes/'+c+'.class','file')); S.compiled=true; S.jarFresh=false; },
+    simple:'Turns the .java source files into .class files that Java can run.',what:'<code>$(hadoop classpath)</code> inserts the library list from step 1, so javac can find <code>org.apache.hadoop…</code>. <code>-d classes</code> writes the results into the classes folder. No output means success.',see:'Three .class files in ~/lab4/classes.',vm:'about 5 seconds',focus:'zMachine'}),
+  C({label:'Package the jar',code:'jar -cvf hostbytes.jar -C classes .',run:()=>{ out('added manifest\nadding: HostBytesDriver.class(in = 2133) (out= 1123)(deflated 47%)\nadding: HostBytesMapper.class(in = 2398) (out= 1201)(deflated 49%)\nadding: HostBytesReducer.class(in = 1712) (out= 763)(deflated 55%)'); addFs(HOME+'/lab4/hostbytes.jar','file'); S.jarFresh=true; },simple:'Packs the class files into one file, hostbytes.jar, that Hadoop can ship to the cluster.',what:'<code>-c</code> create, <code>-v</code> list what is added, <code>-f</code> the jar name, <code>-C classes .</code> take everything from inside the classes folder.',see:'hostbytes.jar appears in ~/lab4.',vm:'instant',focus:'zMachine'}),
+  C({label:'Check the jar',code:'ls -lh hostbytes.jar\njar -tf hostbytes.jar',run:()=>out('-rw-rw-r-- 1 hadoop hadoop 3.9K Oct 17 11:02 hostbytes.jar\nMETA-INF/\nMETA-INF/MANIFEST.MF\nHostBytesDriver.class\nHostBytesMapper.class\nHostBytesReducer.class'),simple:'Shows the jar\'s size and what is inside.',what:'<code>jar -tf</code> lists the contents without unpacking.',see:'About 4 KB, with the three classes and a manifest.',vm:'instant',focus:'zMachine'})]
+  ,take:['javac compiles, jar packages, and hadoop jar submits.','If javac says "package org.apache.hadoop does not exist", the classpath part failed.']},
+ {title:'Run without a combiner and capture the counters',short:'baseline run',intro:'The baseline: one reducer, no combiner. Read the counters carefully.',cmds:[
+  C({label:'Run the job, as written',code:RUN('out-nocombiner',1,'false')+" \\\n  2>&1 | tee ~/lab4/run-nocombiner.log\n\ngrep -A 40 'Map-Reduce Framework' ~/lab4/run-nocombiner.log",run:async()=>{ out('Deleted /user/hadoop/lab4/out-nocombiner','dim'); await runJob({name:'bug',label:'host bytes (mapper as written)',input:'events',R:1,combiner:false,partitioner:'hash',fixed:false,out:'out-nocombiner'},{tee:'run-nocombiner.log'}); S.lastEdit=Object.assign(around('HostBytesMapper.java','int start = i + field.length() + 3;',3,9,'bad'),{why:'start lands on the space after the colon'}); },
+    simple:'Deletes any old output, then runs the job on the two million events with one reducer and no combiner, saving everything it prints into a log file.',what:'<code>hadoop jar … HostBytesDriver in out 1 false</code>: the last two arguments are the number of reducers and the combiner switch. <code>2&gt;&amp;1 | tee file</code> shows the output on screen and saves it at the same time. The job says "completed successfully"…',see:'…but read the counters: Map output records = 0 and a <code>custom</code> group with malformed_lines = 2,000,000. Every single line was rejected.',vm:'about a minute',focus:'zCnt',
+    fix:'The mapper\'s <code>extract()</code> expects <code>"host":"host042"</code>, but Python\'s <code>json.dumps</code> (used to make events.json) writes a space after every colon: <code>"host": "host042"</code>. So <code>start</code> lands on the space, host becomes an empty string, and <code>Long.parseLong("")</code> fails for every line. The job "succeeds" with zero output. This is exactly why the mapper counts malformed lines. The next two commands fix it.'}),
+  C({label:'Fix the mapper: skip the space after the colon',extra:true,code:"sed -i \"s|int start = i + field.length() + 3;|int start = i + field.length() + 3;\\n        while (start < json.length() \\&\\& json.charAt(start) == ' ') start++;|\" ~/lab4/src/HostBytesMapper.java\ngrep -n 'while (start' ~/lab4/src/HostBytesMapper.java",run:()=>{ S.mapperFixed=true; S.jarFresh=false; S.lastEdit=Object.assign(around('HostBytesMapper.java','while (start <',4,9,'hl'),{why:'one line added'}); out(idxOf('HostBytesMapper.java','while (start <')+1+':        while (start < json.length() && json.charAt(start) == \' \') start++;'); },
+    simple:'Adds one line to the mapper: after the colon, skip any spaces before reading the value.',what:'<code>sed -i</code> edits the file in place, inserting the new line right after the line that sets <code>start</code>. The <code>\\&amp;\\&amp;</code> is escaped because <code>&amp;</code> has a special meaning in sed.',see:'One new line after the line that sets start; the code panel highlights it. The jar is now out of date.',vm:'instant',focus:'zCode'}),
+  C({label:'Recompile, repackage and run again',extra:true,code:"cd ~/lab4 && javac -classpath $(hadoop classpath) -d classes src/*.java && jar -cvf hostbytes.jar -C classes . > /dev/null\n"+RUN('out-nocombiner',1,'false')+" \\\n  2>&1 | tee ~/lab4/run-nocombiner.log\n\ngrep -A 40 'Map-Reduce Framework' ~/lab4/run-nocombiner.log",run:async()=>{ S.mode='busy'; await wait(700); S.mode='shell'; S.jarFresh=true; out('Deleted /user/hadoop/lab4/out-nocombiner','dim'); await runJob({name:'base',label:'host bytes, no combiner',input:'events',R:1,combiner:false,partitioner:'hash',fixed:true,out:'out-nocombiner'},{tee:'run-nocombiner.log'}); S.evidence.c1=true; },
+    simple:'Builds the fixed version and runs the baseline again.',what:'Same command as before, now with the corrected mapper. The <code>grep -A 40</code> prints the "Map-Reduce Framework" counters and the 40 lines after them.',see:'Map output records = 2,000,000, Reduce shuffle bytes = 36,000,018, Spilled Records = 4,000,000, no custom group (it only appears when something was counted). This is your real baseline.',vm:'about a minute',focus:'zCnt',
+    fix:'The sheet says to check that malformed_lines is 0. When nothing is malformed, Hadoop does not print the <code>custom</code> group at all, so its absence is the "0".'})]
+  ,take:['A job can "complete successfully" and still be wrong. The counters are how you find out.','Without a combiner, every one of the 2,000,000 pairs crossed the shuffle: 36 MB.']},
+ {title:'Run with a combiner and compare',short:'combiner',intro:'Same job, with the reducer also used as a combiner.',cmds:[
+  C({label:'Run with the combiner',code:RUN('out-combiner',1,'true')+" \\\n  2>&1 | tee ~/lab4/run-combiner.log",run:async()=>{ out('Deleted /user/hadoop/lab4/out-combiner','dim'); await runJob({name:'comb',label:'host bytes, with combiner',input:'events',R:1,combiner:true,partitioner:'hash',fixed:true,out:'out-combiner'},{tee:'run-combiner.log'}); },
+    simple:'Runs again, but each mapper adds up its own pairs per host before sending them.',what:'The mapper still emits 2,000,000 pairs. The combiner then turns each mapper\'s pairs into at most one per host: 200 hosts × 3 mappers = 600 records cross the shuffle.',see:'Combine input 2,000,000, combine output 600, Reduce shuffle bytes about 10.8 KB. The pipeline\'s shuffle bar shrinks to a sliver.',vm:'about 30 seconds',focus:'zJob'}),
+  C({label:'Compare the two logs',code:"echo '--- no combiner ---'\ngrep -E 'Map output records|Combine|Reduce shuffle bytes|Reduce input records' ~/lab4/run-nocombiner.log\necho '--- with combiner ---'\ngrep -E 'Map output records|Combine|Reduce shuffle bytes|Reduce input records' ~/lab4/run-combiner.log",run:()=>{ const a=S.runs.base.m, b=S.runs.comb.m; out(`--- no combiner ---\n\t\tMap output records=${a.mapOut}\n\t\tCombine input records=0\n\t\tCombine output records=0\n\t\tReduce shuffle bytes=${a.mat}\n\t\tReduce input records=${a.mapOut}\n--- with combiner ---\n\t\tMap output records=${b.mapOut}\n\t\tCombine input records=${b.combIn}\n\t\tCombine output records=${b.combOut}\n\t\tReduce shuffle bytes=${b.mat}\n\t\tReduce input records=${b.combOut}`); },simple:'Prints the important counters from both runs, one above the other.',what:'<code>grep -E</code> keeps the lines matching any of the listed names.',see:'Shuffle bytes 36,000,018 against 10,818: a 99.97% reduction. The counters table on the right does the arithmetic.',vm:'instant',focus:'zCnt'}),
+  C({label:'Check the results are identical',code:"hdfs dfs -cat /user/$USER/lab4/out-combiner/part-r-00000 | head -5\ndiff <(hdfs dfs -cat /user/$USER/lab4/out-nocombiner/part-r-00000 | sort) \\\n     <(hdfs dfs -cat /user/$USER/lab4/out-combiner/part-r-00000 | sort) && echo 'IDENTICAL RESULTS'",run:async()=>{ await wait(700); out(FIRST5.map(r=>r.join('\t')).join('\n')+'\nIDENTICAL RESULTS','ok'); },simple:'Shows the first five hosts\' totals and checks that both runs produced exactly the same answers.',what:'<code>diff &lt;(…) &lt;(…)</code> compares the outputs of two commands; if there is no difference it prints nothing and the <code>&amp;&amp; echo</code> runs.',see:'host000 to host004 with about 2.5 billion bytes each, then IDENTICAL RESULTS.',vm:'about 5 seconds',focus:'zCnt'})]
+  ,take:['A combiner is a reduce on the map side; it can cut shuffle traffic by orders of magnitude.','The answer must not change: diff proves it. Hadoop may run a combiner zero, one or many times, so correctness must never depend on it.']},
+ {title:'Show why a combiner would break an average',short:'average trap',intro:'A pen-and-paper exercise; the simulator draws it.',cmds:[
+  C({label:'Work it through',code:"# mapper A emits bytes 10 and 20 for host042; mapper B emits 60\n#   combine per mapper:  A -> 15,  B -> 60\n#   reducer averages:    (15 + 60) / 2 = 37.5   WRONG\n#   true average:        (10 + 20 + 60) / 3 = 30\n#\n#   map    -> (host, (sum=bytes, count=1))\n#   combine-> (host, (sum=sum(sums), count=sum(counts)))     [now safe]\n#   reduce -> (host, sum/count)",run:()=>{ S.outList={title:'Average with a combiner: wrong 37.5, right 30',items:['A: 10, 20 → avg 15 (WRONG path)','B: 60 → avg 60','reduce: (15 + 60) / 2 = 37.5','A: (sum 30, count 2)','B: (sum 60, count 1)','reduce: 90 / 3 = 30 ✓']}; },
+    simple:'Averaging per mapper and then averaging the averages gives 37.5, but the true average is 30. Carry (sum, count) instead, and divide only at the end.',what:'Sum works as a combiner because adding partial sums gives the same total. An average loses how many values each partial average came from. A pair (sum, count) keeps that information, and pairs can be added safely in any grouping. In Java this needs a small custom Writable with two longs: <code>write()</code> writes sum then count, <code>readFields()</code> reads them back in the same order.',see:'The two calculations side by side in the results panel.',vm:'paper only',focus:'zCnt'})]
+  ,take:['Combiner-safe: sum, count, min, max. Not safe: average, distinct count.','Make an average safe by sending (sum, count) pairs.']},
+ {title:'Add reducers and watch the output files',short:'4 reducers',intro:'Four reducers produce four part files.',cmds:[
+  C({label:'Run with four reducers',code:RUN('out-4r',4,'true'),run:async()=>{ out('Deleted /user/hadoop/lab4/out-4r','dim'); await runJob({name:'r4',label:'host bytes, 4 reducers, combiner',input:'events',R:4,combiner:true,partitioner:'hash',fixed:true,out:'out-4r'}); },
+    simple:'The same job, split across four reducers.',what:'The default partitioner sends each host to reducer <code>hash(host) mod 4</code>.',see:'Four reduce boxes and four part files in the pipeline.',vm:'about 35 seconds',focus:'zJob'}),
+  C({label:'List the output and count keys per file',code:'hdfs dfs -ls /user/$USER/lab4/out-4r\nfor i in 0 1 2 3; do\n  echo "part-r-0000$i: $(hdfs dfs -cat /user/$USER/lab4/out-4r/part-r-0000$i | wc -l) keys"\ndone',run:async()=>{ await wait(800); out('Found 5 items\n-rw-r--r--   1 hadoop supergroup          0 2026-10-17 11:21 /user/hadoop/lab4/out-4r/_SUCCESS\n'+PART4.bytes.map((b,i)=>`-rw-r--r--   1 hadoop supergroup        ${String(b).padStart(3)} 2026-10-17 11:21 /user/hadoop/lab4/out-4r/part-r-0000${i}`).join('\n')+'\n'+PART4.keys.map((k,i)=>`part-r-0000${i}: ${k} keys`).join('\n')); S.outList={title:'out-4r: which hosts each reducer got (first three)',items:PART4.heads.map((h,i)=>`part ${i}: ${h.map(x=>x[0]).join(', ')} … (${PART4.keys[i]} keys)`)}; },
+    simple:'Lists the four part files and counts how many hosts ended up in each.',what:'<code>_SUCCESS</code> is an empty marker written when the job finished.',see:'51, 49, 49 and 51 hosts: close to 50 each but not equal, because hashing is even on average, not exactly. Hosts are scattered: host000 went to part 3, host001 to part 0.',vm:'about 10 seconds',focus:'zCnt'})]
+  ,take:['Number of reducers = number of part files.','Each file is sorted inside, but the files together are not one sorted list; that needs a total-order partitioner, which is why ORDER BY is expensive.']},
+ {title:'Write a custom partitioner',short:'partitioner',intro:'Send host000-049 to reducer 0, host050-099 to reducer 1, and so on.',cmds:[
+  C({label:'Write HostRangePartitioner.java',code:"cat > ~/lab4/src/HostRangePartitioner.java <<'EOF'\n"+PARTITIONER+"\nEOF",run:()=>{ S.src['HostRangePartitioner.java']=1; addFs(HOME+'/lab4/src/HostRangePartitioner.java','file'); S.lastEdit={file:'HostRangePartitioner.java',from:4,to:16,hl:[8,9],why:'the rule'}; S.evidence.part=true; },
+    simple:'Takes the number out of the host name and divides by 50: host042 → 0, host108 → 2. That number picks the reducer.',what:'<code>getPartition</code> must return a number from 0 to numPartitions − 1. <code>% numPartitions</code> keeps it in range if you run with fewer reducers.',see:'A fourth Java file.',vm:'instant',focus:'zCode'}),
+  C({label:'Plug it into the driver and rebuild',code:"sed -i 's|FileInputFormat.addInputPath|job.setPartitionerClass(HostRangePartitioner.class);\\n        FileInputFormat.addInputPath|' ~/lab4/src/HostBytesDriver.java\ncd ~/lab4 && javac -classpath $(hadoop classpath) -d classes src/*.java && jar -cvf hostbytes.jar -C classes . > /dev/null",run:async()=>{ S.partitionerInDriver=true; S.lastEdit=Object.assign(around('HostBytesDriver.java','setPartitionerClass',4,4,'hl'),{why:'one line added'}); S.mode='busy'; await wait(800); S.mode='shell'; addFs(HOME+'/lab4/classes/HostRangePartitioner.class','file'); S.jarFresh=true; },simple:'Adds one line to the driver telling the job to use the new partitioner, then recompiles and repackages.',what:'From now on every run of this jar uses the range partitioner, including the skew run in step 10.',see:'The driver gains <code>job.setPartitionerClass(…)</code>.',vm:'about 5 seconds',focus:'zCode'}),
+  C({label:'Run and look at two part files',code:RUN('out-custom',4,'true')+"\n\nhdfs dfs -cat /user/$USER/lab4/out-custom/part-r-00000 | head -3\nhdfs dfs -cat /user/$USER/lab4/out-custom/part-r-00001 | head -3",run:async()=>{ out('Deleted /user/hadoop/lab4/out-custom','dim'); await runJob({name:'custom',label:'host bytes, 4 reducers, range partitioner',input:'events',R:4,combiner:true,partitioner:'custom',fixed:true,out:'out-custom'}); out(CUSTOM_HEADS.map(f=>f.map(r=>r.join('\t')).join('\n')).join('\n')); S.outList={title:'out-custom: each reducer got one block of 50 hosts',items:['part 0: host000 … host049','part 1: host050 … host099','part 2: host100 … host149','part 3: host150 … host199']}; },
+    simple:'Runs with four reducers again; this time reducer 0 should hold exactly host000 to host049.',what:'Compare with step 8, where the hosts were scattered.',see:'part-r-00000 starts host000, host001, host002; part-r-00001 starts host050, host051, host052. Exactly 50 keys per file.',vm:'about 35 seconds',focus:'zJob'})]
+  ,take:['The partitioner chooses which reducer gets a key; the sort chooses the order inside it.','Custom partitioners group related keys, for example one report per reducer.']},
+ {title:'Create skew and watch one reducer suffer',short:'skew',intro:'Generate data where host007 has 60% of the events and see what happens to its reducer.',cmds:[
+  C({label:'Start the job history server',extra:true,code:'mapred --daemon start historyserver',run:()=>{ addProc('jhs','JobHistoryServer','web UI :19888'); S.hist=true; },simple:'Starts the service that keeps the record of finished jobs.',what:'The YARN UI\'s "History" link and <code>mapred job -history</code> both read from this server. Without it they fail.',see:'A JobHistoryServer process.',vm:'about 5 seconds',focus:'zMachine',fix:'The sheet sends you to "the application &gt; History" and uses <code>mapred job -history</code> in step 11, but never starts the JobHistoryServer. Start it first, as here; jobs that already finished will still appear.'}),
+  C({label:'Generate the skewed data',code:"python3 - <<'EOF'\nimport json, random\nHOSTS = [f\"host{i:03d}\" for i in range(200)]\nwith open(\"/tmp/skewed.json\", \"w\") as f:\n    for i in range(1_000_000):\n        host = \"host007\" if random.random() < 0.6 else random.choice(HOSTS)\n        f.write(json.dumps({\"host\": host, \"bytes\": random.randint(100, 500000)}) + \"\\n\")\nEOF",run:async()=>{ S.mode='busy'; await wait(900); S.mode='shell'; addFs('/tmp/skewed.json','file'); },simple:'Makes a million events where 60% come from one host, host007.',what:'Each line has only host and bytes. About 602,000 lines are host007; the other 398,000 are spread over all 200 hosts, about 2,000 each.',see:'/tmp/skewed.json, about 35 MB.',vm:'about 5 seconds',focus:'zMachine'}),
+  C({label:'Upload and run with four reducers',code:"hdfs dfs -put -f /tmp/skewed.json /user/$USER/lab4/skewed.json\nhdfs dfs -rm -r -f /user/$USER/lab4/out-skew\nhadoop jar ~/lab4/hostbytes.jar HostBytesDriver \\\n  /user/$USER/lab4/skewed.json /user/$USER/lab4/out-skew 4 false",run:async()=>{ await wait(400); await runJob({name:'skew',label:'host bytes on skewed data, 4 reducers, no combiner',input:'skew',R:4,combiner:false,partitioner:'custom',fixed:true,out:'out-skew'}); S.evidence.skew=true; },
+    simple:'Runs the job on the skewed file with four reducers and no combiner.',what:'The file is small enough for one map task. Because of step 9, the range partitioner is still active: host007 is in host000 to host049, so it goes to reducer 0 along with 49 other hosts.',see:'Reducer 0 receives about 700,000 records; the others about 100,000 each. Its bar is the long red one.',vm:'about 45 seconds',focus:'zCnt',
+    fix:'Two things to know. The jar still contains the step 9 range partitioner, so host007 lands on reducer 0 (with the default hash partitioner it would be reducer 2, about 698,000 records). And on a single VM, summing is cheap, so expect the slow reducer to take about 20 seconds against about 5, not "minutes"; the ratio is what matters.'}),
+  C({label:'Look at the reducers in the history UI',code:'# open http://localhost:8088 > the application > History > Reduce tasks\n# and sort by Elapsed Time',run:()=>{},simple:'Opens the browser view of the finished job and sorts reducers by how long they took.',what:'"History" opens the JobHistoryServer page (port 19888) for that job.',see:'One reduce task several times longer than the other three. Screenshot it for your report.',vm:'n/a',focus:'zCnt'})]
+  ,take:['A key always goes to one reducer, so a hot key makes one reducer slow, and the job waits for it.','More reducers or more machines do not split a single key. Fixes include a combiner (for sums), salting the key, or treating hot keys separately.']},
+ {title:'Read the job history properly',short:'history CLI',intro:'The command-line tools you would use on a server without a browser.',cmds:[
+  C({label:'List recent jobs',code:'mapred job -list all | tail -5',run:()=>{ out(S.jobs.slice(-5).map(j=>`${j.job}\tSUCCEEDED\t${Date.now()}\thadoop\tdefault\tVERY_NORMAL\t1\t0\t2048M\t0M\t2048M\thttp://ubuntuOS:8088/proxy/${j.app}/`).join('\n')); },simple:'Lists the most recent jobs and their state.',what:'Each line starts with a job ID; copy the last one (the skew run) for the next command.',see:'Your jobs, all SUCCEEDED, including the first one that wrote nothing.',vm:'a few seconds',focus:'zCnt'}),
+  C({label:'Show one job\'s history',extra:true,code:'mapred job -history JOB_ID_FROM_ABOVE',run:()=>{ const r=S.runs.skew; out(`Hadoop job: ${r.job}\n=====================================\nUser: hadoop\nJobName: host bytes\nJobConf: hdfs://localhost:9000/tmp/hadoop-yarn/staging/hadoop/.staging/${r.job}/job.xml\nSubmitted At: 17-Oct-2026 11:34:02\nLaunched At: 17-Oct-2026 11:34:05 (3sec)\nFinished At: 17-Oct-2026 11:34:49 (44sec)\nStatus: SUCCEEDED\n...\nTask Summary\n============================\nKind\tTotal\tSuccessful\tFailed\tKilled\tStartTime\tFinishTime\n\nMap\t1\t1\t0\t0\t17-Oct-2026 11:34:08\t17-Oct-2026 11:34:21 (12sec)\nReduce\t4\t4\t0\t0\t17-Oct-2026 11:34:22\t17-Oct-2026 11:34:47 (25sec)\n...\nreduce task timings:\n${r.m.redTime.map((t,i)=>`task_${APP}_${r.job.slice(-4)}_r_00000${i}\t${t}sec`).join('\n')}`); },
+    simple:'Prints the saved report of one finished job: when it ran, and how long each task took.',what:'Replace JOB_ID_FROM_ABOVE with the ID you copied, for example <code>job_…_0007</code>.',see:'The reduce task timings: task r_000000 is the slow one.',vm:'a few seconds',focus:'zCnt',fix:'The sheet\'s commented example passes the output folder (<code>/user/$USER/lab4/out-skew</code>). That was Hadoop 1 and 2 behaviour; in Hadoop 3 give the job ID, and the JobHistoryServer must be running.'}),
+  C({label:'Finished applications and their logs',code:"yarn application -list -appStates FINISHED | tail -5\nyarn logs -applicationId <paste_application_id> | grep -E 'Reduce shuffle bytes|Spilled Records' | head",run:()=>{ out(S.jobs.slice(-5).map(j=>`${j.app}\t          host bytes\t           MAPREDUCE\t    hadoop\t   default\t          FINISHED\t         SUCCEEDED\t           100%\thttp://ubuntuOS:19888/jobhistory/job/${j.job}`).join('\n')); out('2026-10-17 11:41:02,113 INFO client.DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at /0.0.0.0:8032\nFile /tmp/logs/hadoop/logs-tfile/'+S.runs.skew.app+' does not exist.\nCan not find any log file matching the pattern: [ALL] for the application: '+S.runs.skew.app+'\nCan not find the logs for the application: '+S.runs.skew.app+' with the appOwner: hadoop','err'); },
+    simple:'Lists finished applications, then tries to fetch the logs of one.',what:'<code>yarn logs</code> collects the task logs of a finished application.',see:'The application list works. The logs command finds nothing.',vm:'a few seconds',focus:'zCnt',
+    fix:'<code>yarn logs</code> only works when log aggregation is switched on (<code>yarn.log-aggregation-enable=true</code> in yarn-site.xml), which it is not by default. And even then, counters are not in the task logs: they are printed by the client (your run-*.log files) and kept by the JobHistoryServer. Read Spilled Records from <code>grep \'Spilled Records\' ~/lab4/run-nocombiner.log</code> instead: 4,000,000, twice the map output, because every record was written to disk once on the map side and once on the reduce side.'})]
+  ,take:['mapred job -list and -history are the first tools for "why was last night\'s job slow?".','Spilled Records much larger than map output records means the sort buffer was too small.']},
+ {title:'Clean up',short:'clean up',intro:'Remove outputs, keep the source and the jar for lab 4.2.',cmds:[
+  C({label:'Remove the output folders',code:'hdfs dfs -rm -r -f /user/$USER/lab4/out-nocombiner /user/$USER/lab4/out-4r /user/$USER/lab4/out-custom\nhdfs dfs -ls /user/$USER/lab4/',run:async()=>{ await wait(600); out('Deleted /user/hadoop/lab4/out-nocombiner\nDeleted /user/hadoop/lab4/out-4r\nDeleted /user/hadoop/lab4/out-custom\nFound 3 items\ndrwxr-xr-x   - hadoop supergroup          0 2026-10-17 11:14 /user/hadoop/lab4/out-combiner\ndrwxr-xr-x   - hadoop supergroup          0 2026-10-17 11:34 /user/hadoop/lab4/out-skew\n-rw-r--r--   1 hadoop supergroup   36779366 2026-10-17 11:33 /user/hadoop/lab4/skewed.json'); },simple:'Deletes three output folders you no longer need.',what:'<code>-f</code> means "no error if it is already gone".',see:'out-combiner, out-skew and skewed.json remain.',vm:'a few seconds',focus:'zMachine'}),
+  C({label:'Count the Java you wrote',code:'wc -l ~/lab4/src/*.java',run:()=>{ const f=['HostBytesDriver.java','HostBytesMapper.java','HostBytesReducer.java','HostRangePartitioner.java']; out(f.map(x=>`  ${String(loc(x)).padStart(3)} /home/hadoop/lab4/src/${x}`).join('\n')+`\n  ${f.reduce((a,x)=>a+loc(x),0)} total`); },simple:'Counts the lines in all your Java files.',what:'Keep this number for lab 4.2.',see:`About ${['HostBytesDriver.java','HostBytesMapper.java','HostBytesReducer.java'].reduce((a,x)=>a+loc(x),0)} lines in the three job files, plus the partitioner, to compute one grouped sum.`,vm:'instant',focus:'zCode'}),
+  C({label:'Stop everything',code:'stop-yarn.sh && stop-dfs.sh',run:async()=>{ if(S.hist){ out('(stopping the history server you started in step 10)','dim'); rmProc('jhs'); S.hist=false; } out('Stopping nodemanagers\nStopping resourcemanager'); rmProc('nm'); rmProc('rm'); S.yarn=false; await wait(300); out('Stopping namenodes on [localhost]\nStopping datanodes\nStopping secondary namenodes [ubuntuOS]'); ['nn','dn','snn'].forEach(rmProc); S.hdfs=false; },simple:'Turns off YARN and HDFS.',what:'Also run <code>mapred --daemon stop historyserver</code> if you started it in step 10; stop-yarn.sh does not stop it.',see:'No processes left.',vm:'about 20 seconds',focus:'zMachine'})]
+  ,take:['Keep ~/lab4/src and hostbytes.jar for lab 4.2.','About 90 lines of Java in three files for one grouped sum: remember it when Spark does it in three.']}
+];
+
+/* ================= step UI ================= */
+let cur=0;
+const done=STEPS.map(s=>s.cmds.map(()=>false));
+const stepDone=i=>done[i].every(Boolean);
+function nextCmd(){ for(let i=0;i<STEPS.length;i++) for(let j=0;j<STEPS[i].cmds.length;j++) if(!done[i][j]) return [i,j]; return null; }
+function renderRail(){ $('#rail').innerHTML=STEPS.map((s,i)=>`<button role="tab" aria-selected="${i===cur}" class="${i===cur?'cur':''} ${stepDone(i)?'done':''}" data-i="${i}"><b>${i+1}</b>${s.short}</button>`).join(''); }
+$('#rail').addEventListener('click',e=>{ const b=e.target.closest('button[data-i]'); if(!b) return; cur=+b.dataset.i; renderStep(); renderRail(); });
+function renderStep(){
+  const s=STEPS[cur], nx=nextCmd();
+  let h=`<div class="step-head"><h2>Step ${cur+1}. ${s.title}</h2><p class="mb-2">${s.intro}</p></div>`;
+  if(nx && nx[0]<cur) h+=`<div class="ff-box"><p class="mb-2">Earlier steps have not been run yet. Run them yourself, or let the simulator run them quickly.</p><button class="btn btn-ink btn-sm" id="ffBtn">Run steps ${nx[0]+1} to ${cur} for me</button></div>`;
+  h+='<div class="cmd-list" id="cmdList">';
+  s.cmds.forEach((c,j)=>{ const isNext=nx&&nx[0]===cur&&nx[1]===j, isDone=done[cur][j];
+    h+=`<div class="cmd ${isDone?'done':''} ${isNext?'next':''}" id="cmd${j}"><div class="cmd-top"><span class="term-badge">bash</span>${c.extra?'<span class="extra">extra, not on the sheet</span>':''}<span class="cmd-label">${c.label}</span><span class="status">${isDone?'done':''}</span><button class="btn btn-sm ${isNext?'btn-ink':'btn-line'} run" data-j="${j}" ${isNext&&!S.busy?'':'disabled'}>${isDone?'Ran':c.code.startsWith('#')?'Show':'Run'}</button></div><pre>${esc(c.code)}</pre>
+    ${isDone?`<div class="cmd-explain"><p class="simple"><strong>In plain words:</strong> ${c.simple}</p>${c.what?`<p>${c.what}</p>`:''}<p class="see">What changed: ${c.see}</p>${c.fix?`<p class="fix mb-2"><strong>Note on the lab sheet:</strong> ${c.fix}</p>`:''}<p class="vm mb-0">On the VM this takes ${c.vm}.</p></div>`:''}</div>`; });
+  if(nx && nx[0]===cur && s.cmds.length-nx[1]>1) h+=`<button class="btn btn-line btn-sm mb-2" id="runRest" ${S.busy?'disabled':''}>Run the rest of this step</button>`;
+  if(stepDone(cur)) h+=`<div class="step-takeaway"><div class="panel-title mb-1">What this step taught</div><ul>${s.take.map(t=>`<li>${t}</li>`).join('')}</ul>${cur<STEPS.length-1?`<button class="btn btn-ink btn-sm mt-2" id="nextStep">Go to step ${cur+2}</button>`:`<a class="btn btn-ink btn-sm mt-2" href="#conclusion">Read what the lab teaches</a>`}</div>`;
+  h+='</div>';
+  $('#stepPane').innerHTML=h;
+  const list=$('#cmdList'), tgt=list&&(list.querySelector('.cmd.next')||list.querySelector('.step-takeaway'));
+  if(list&&tgt) list.scrollTop=Math.max(0,tgt.offsetTop-list.offsetTop-8);
+}
+$('#stepPane').addEventListener('click',async e=>{
+  const r=e.target.closest('button.run'); if(r&&!r.disabled){ await runCmd(cur,+r.dataset.j,false); return; }
+  if(e.target.id==='nextStep'){ cur++; renderStep(); renderRail(); $('#sim').scrollIntoView(); return; }
+  if(e.target.id==='runRest'){ const nx=nextCmd(); for(let j=nx[1];j<STEPS[cur].cmds.length;j++) await runCmd(cur,j,false); return; }
+  if(e.target.id==='ffBtn') await fastForward(cur);
+});
+function focusZones(id){ ['zMachine','zCode','zJob','zCnt'].forEach(z=>$('#'+z).classList.toggle('focus',z===id)); const sys=$('#sys'); if(getComputedStyle(sys).position==='sticky'){ const el=$('#'+id); sys.scrollTo({top:Math.max(0,el.offsetTop-52),behavior:reduceMotion?'auto':'smooth'}); } }
+async function runCmd(i,j,fast){
+  if(S.busy) return; const c=STEPS[i].cmds[j]; S.busy=true; jump=true;
+  if(!c.code.startsWith('#')||i===6) echo(c.code);
+  focusZones(c.focus||'zMachine'); if(!fast) renderStep();
+  try{ await c.run(fast); } catch(err){ console.error(err); out('(simulator error: '+err.message+')','err'); }
+  done[i][j]=true; S.busy=false; termDirty=true;
+  if(!fast){ renderStep(); renderRail(); renderAll(); }
+}
+async function fastForward(upTo){ fastMode=true; const b=$('#ffBtn'); if(b){ b.disabled=true; b.textContent='Running…'; } let nx; while((nx=nextCmd())&&nx[0]<upTo) await runCmd(nx[0],nx[1],true); fastMode=false; renderStep(); renderRail(); renderAll(); }
+window.__sim={S,STEPS,nextCmd,done};
+renderRail(); renderStep(); renderAll();
+})();
+</script>
+</body>
+</html>
